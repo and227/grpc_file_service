@@ -24,36 +24,10 @@ import (
 
 type FileGRPCServer struct {
 	pb.UnimplementedFileServiceServer
-	mutex         sync.Mutex
-	l             *log.Logger
-	downloadCount int32
-	readListCount int32
-	mu            sync.Mutex
+	mutex sync.Mutex
+	l     *log.Logger
+	mu    sync.Mutex
 }
-
-// type rateLimitInterceptor struct {
-// 	requestCount int32
-// 	limitValue   int32
-// }
-
-// func (limiter *rateLimitInterceptor) Inc() {
-// 	atomic.AddInt32(&limiter.requestCount, 1)
-// }
-
-// func (limiter *rateLimitInterceptor) Dec() {
-// 	atomic.AddInt32(&limiter.requestCount, -1)
-// }
-
-// func (limiter rateLimitInterceptor) IsLimited() bool {
-// 	return limiter.requestCount > limiter.limitValue
-// }
-
-// func (limiter *rateLimitInterceptor) Limit() bool {
-// 	limiter.Inc()
-// 	defer limiter.Dec()
-
-// 	return limiter.IsLimited()
-// }
 
 var (
 	downloadLimiter = make(chan struct{}, UP_DOWNLOAD_LIMIT)
@@ -85,16 +59,6 @@ func (g *FileGRPCServer) contextError(ctx context.Context) error {
 }
 
 func (g *FileGRPCServer) Upload(stream pb.FileService_UploadServer) error {
-	// atomic.AddInt32(&g.downloadCount, 1)
-	// defer atomic.AddInt32(&g.downloadCount, -1)
-
-	// g.mu.Lock()
-	// defer g.mu.Unlock()
-
-	// if g.downloadCount > UP_DOWNLOAD_LIMIT {
-	// 	return status.Errorf(codes.ResourceExhausted, "Download limit hit")
-	// }
-
 	select {
 	case downloadLimiter <- struct{}{}:
 		defer func() {
@@ -142,13 +106,6 @@ func (g *FileGRPCServer) Upload(stream pb.FileService_UploadServer) error {
 }
 
 func (g *FileGRPCServer) Download(request *pb.FileDownloadRequest, stream pb.FileService_DownloadServer) error {
-	// atomic.AddInt32(&g.downloadCount, 1)
-	// defer atomic.AddInt32(&g.downloadCount, -1)
-
-	// if g.downloadCount > UP_DOWNLOAD_LIMIT {
-	// 	return status.Errorf(codes.ResourceExhausted, "Download limit hit")
-	// }
-
 	select {
 	case downloadLimiter <- struct{}{}:
 		defer func() {
@@ -249,18 +206,7 @@ func main() {
 	}
 
 	var opts []grpc.ServerOption
-	// limiter := &rateLimitInterceptor{limitValue: UP_DOWNLOAD_LIMIT}
-
-	grpcServer := grpc.NewServer(
-		opts...,
-	// // init the Ratelimiting middleware
-	// grpc_middleware.WithUnaryServerChain(
-	// 	grpc_ratelimit.UnaryServerInterceptor(limiter),
-	// ),
-	// grpc_middleware.WithStreamServerChain(
-	// 	grpc_ratelimit.StreamServerInterceptor(limiter),
-	// ),
-	)
+	grpcServer := grpc.NewServer(opts...)
 	logger := log.New()
 	logger.SetLevel(log.DebugLevel)
 	logger.SetFormatter(&log.JSONFormatter{})
