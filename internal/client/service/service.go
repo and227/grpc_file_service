@@ -1,40 +1,35 @@
-package main
+package service
 
 import (
 	"context"
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"os"
 	"os/signal"
 	"path"
-	"sync"
 	"syscall"
 
-	pb "file_service/file_proto"
+	pb "file_service/pkg/file_proto"
 
 	"google.golang.org/grpc"
 )
 
-const (
-	WRITE_FOLDER = "write"
-	READ_FOLDER  = "read"
-)
-
 type ClientService struct {
-	addr      string
-	filePath  string
-	batchSize int
-	client    pb.FileServiceClient
-	conn      *grpc.ClientConn
+	readFolder  string
+	writeFolder string
+	addr        string
+	batchSize   int
+	client      pb.FileServiceClient
+	conn        *grpc.ClientConn
 }
 
-func New(addr string, filePath string, batchSize int) *ClientService {
+func New(readFolder string, writeFolder string, addr string, batchSize int) *ClientService {
 	return &ClientService{
-		addr:      addr,
-		filePath:  filePath,
-		batchSize: batchSize,
+		readFolder:  readFolder,
+		writeFolder: writeFolder,
+		addr:        addr,
+		batchSize:   batchSize,
 	}
 }
 
@@ -53,7 +48,6 @@ func (s *ClientService) Close() {
 }
 
 func (s *ClientService) SendFile(filename string) error {
-	log.Println(s.addr, s.filePath)
 	interrupt := make(chan os.Signal, 1)
 	shutdownSignals := []os.Signal{
 		os.Interrupt,
@@ -88,7 +82,7 @@ func (s *ClientService) upload(ctx context.Context, cancel context.CancelFunc, f
 		fmt.Printf("RPC call error: %s\n", err)
 		return err
 	}
-	file, err := os.Open(path.Join(READ_FOLDER, filename))
+	file, err := os.Open(path.Join(s.readFolder, filename))
 	if err != nil {
 		return err
 	}
@@ -139,7 +133,7 @@ func (s *ClientService) download(
 		ctx,
 		&pb.FileDownloadRequest{
 			FileName:  filename,
-			ChankSize: BATCH_SIZE,
+			ChankSize: int32(s.batchSize),
 		},
 	)
 
@@ -148,7 +142,7 @@ func (s *ClientService) download(
 	}
 
 	file, err := os.OpenFile(
-		path.Join(WRITE_FOLDER, filename),
+		path.Join(s.writeFolder, filename),
 		os.O_APPEND|os.O_WRONLY|os.O_CREATE,
 		0644,
 	)
@@ -175,7 +169,10 @@ func (s *ClientService) download(
 
 	cancel()
 
-	fmt.Printf("%d) Downloaded file: filename=%s, chank_size=%d\n", procnum, filename, BATCH_SIZE)
+	fmt.Printf(
+		"%d) Downloaded file: filename=%s, chank_size=%d\n",
+		procnum, filename, s.batchSize,
+	)
 
 	return nil
 }
@@ -201,79 +198,4 @@ func (s *ClientService) ListFiles(procnum int) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	return s.listfiles(ctx, cancel, procnum)
-}
-
-func getRandomFile() string {
-	n := len(sendFiles)
-	return sendFiles[rand.Intn(n)]
-}
-
-func getFilename(num int) string {
-	n := len(sendFiles)
-	return sendFiles[num%n]
-}
-
-var sendFiles []string
-
-func init() {
-	files, err := os.ReadDir(READ_FOLDER)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, file := range files {
-		sendFiles = append(sendFiles, file.Name())
-	}
-	fmt.Printf("%d files to send\n", len(sendFiles))
-}
-
-func main() {
-	clientService := New(SERVER_ADDR, FILE_PATH, BATCH_SIZE)
-	clientService.Connect()
-	defer clientService.Close()
-
-	// if err := clientService.SendFile(); err != nil {
-	// 	log.Fatal(err)
-	// }
-	// if err := clientService.DownloadFile(FILE_NAME); err != nil {
-	// 	log.Fatal(err)
-	// }
-	// if err := clientService.ListFiles(); err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	var wg sync.WaitGroup
-
-	// wg.Add(20)
-	// for i := 0; i < 20; i++ {
-	// 	go func(num int, client *ClientService, wg *sync.WaitGroup) {
-	// 		if err := clientService.SendFile(getRandomFile()); err != nil {
-	// 			log.Fatal(err)
-	// 		}
-	// 		wg.Done()
-	// 	}(i, clientService, &wg)
-	// }
-
-	wg.Add(20)
-	for i := 0; i < 20; i++ {
-		go func(num int, client *ClientService, wg *sync.WaitGroup) {
-			if err := clientService.DownloadFile(num, getFilename(num)); err != nil {
-				log.Printf("%d) %s\n", num, err)
-			}
-			wg.Done()
-		}(i, clientService, &wg)
-	}
-
-	// wg.Add(20)
-	// for i := 0; i < 20; i++ {
-	// 	go func(procnum int, client *ClientService, wg *sync.WaitGroup) {
-	// 		if err := client.ListFiles(procnum); err != nil {
-	// 			log.Printf("%d) %s\n", procnum, err)
-	// 		}
-	// 		wg.Done()
-	// 	}(i, clientService, &wg)
-	// }
-
-	wg.Wait()
-
-	fmt.Println("Done!")
 }

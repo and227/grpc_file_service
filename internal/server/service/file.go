@@ -1,4 +1,4 @@
-package main
+package service
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 )
 
 type File struct {
+	fileSize   uint32
 	FilePath   string
 	buffer     *bytes.Buffer
 	OutputFile *os.File
@@ -15,6 +16,17 @@ type File struct {
 
 func NewFile() *File {
 	return &File{}
+}
+
+func (f *File) IsSet() bool {
+	return f.FilePath != ""
+}
+
+func (f *File) Close() error {
+	if f.OutputFile == nil {
+		return nil
+	}
+	return f.OutputFile.Close()
 }
 
 func (f *File) SetFile(fileName, path string) error {
@@ -35,10 +47,8 @@ func (f *File) Write(chunk []byte) error {
 	if f.OutputFile == nil {
 		return nil
 	}
+
+	f.fileSize += uint32(len(chunk))
 	_, err := f.OutputFile.Write(chunk)
 	return err
-}
-
-func (f *File) Close() error {
-	return f.OutputFile.Close()
 }
